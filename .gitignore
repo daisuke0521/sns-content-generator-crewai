@@ -1,0 +1,26 @@
+# APIキー・環境変数（絶対にGitHubにあげない）
+.env
+
+# 生成履歴データベース（ローカル実行時に自動生成）
+history.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
