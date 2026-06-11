@@ -10,7 +10,7 @@ pinned: false
 license: mit
 ---
 
-# 🤖 SNS・ブログ文章自動生成 AI（CrewAI版）
+# 🤖 AI投稿文メーカー(SNS投稿＆ブログ記事)（CrewAI版）
 
 [CrewAI](https://github.com/crewAIInc/crewAI) を用いて、**4体のAIエージェントが役割分担・協働**しながらSNS・ブログ文章を自動生成するアプリです。
 Gemini無料枠（[Google AI Studio](https://aistudio.google.com)）をLLMバックエンドとして使用しています。

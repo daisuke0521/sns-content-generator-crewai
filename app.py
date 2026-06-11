@@ -86,14 +86,14 @@ def generate_content(
 
 # ── Gradio UI ─────────────────────────────────────────────
 with gr.Blocks(
-    title="SNS・ブログ文章自動生成 AI（CrewAI版）",
+    title="AI投稿文メーカー(SNS投稿＆ブログ記事)（CrewAI版）",
     theme=gr.themes.Soft(),
     css=".header-text { text-align: center; padding: 20px 0; }",
 ) as demo:
     gr.Markdown(
         """
         <div class="header-text">
-        <h1>🤖 SNS・ブログ文章自動生成 AI <span style="font-size:0.7em; background:#6c5ce7; color:white; padding:2px 8px; border-radius:4px;">CrewAI版</span></h1>
+        <h1>🤖 AI投稿文メーカー(SNS投稿＆ブログ記事) <span style="font-size:0.7em; background:#6c5ce7; color:white; padding:2px 8px; border-radius:4px;">CrewAI版</span></h1>
         <p>CrewAIによる4体のAIエージェント協働パイプライン × 方言・トーン選択 × 深層ターゲット分析 × A/Bテスト × 履歴保存</p>
         </div>
         """,
