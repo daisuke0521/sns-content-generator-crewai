@@ -67,18 +67,8 @@ def generate_content(
         return msg, "", msg, msg, msg, history_table
     except Exception as e:
         err_text = str(e)
-        if "429" in err_text or "rate" in err_text.lower():
-            msg = (
-                "❌ 現在このモデルが混雑しています（レート制限）。\n"
-                "30秒ほど待つか、別のモデルを選んで再度お試しください。\n\n"
-                f"詳細：{err_text}"
-            )
-        elif "404" in err_text or "does not exist" in err_text:
-            msg = (
-                "❌ 選択したモデルが現在利用できません（モデル名が変更/廃止された可能性があります）。\n"
-                "別のモデルを選択して再度お試しください。\n\n"
-                f"詳細：{err_text}"
-            )
+        if "429" in err_text or "rate" in err_text.lower() or "404" in err_text or "does not exist" in err_text:
+            msg = "❌ 現在、このモデルは利用できません。別のモデルを使うか時間を置いてから再度お試しください。"
         else:
             msg = f"❌ エラーが発生しました：{err_text}"
         return msg, "", msg, msg, msg, history_table
