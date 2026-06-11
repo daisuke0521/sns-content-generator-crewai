@@ -3,10 +3,11 @@
 STEP1 Strategist  : 深層ターゲット分析・コンテンツ戦略立案
 STEP2 Writer      : 戦略にもとづく本文執筆
 STEP3 SEO Editor  : SEO最適化・品質チェック
-STEP4 Social Adapter（複数エージェントを非同期実行） : X / Instagram / ブログ / ハッシュタグへ変換
+STEP4 Social Adapter（複数エージェントをスレッドで並列実行） : X / Instagram / ブログ / ハッシュタグへ変換
 """
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 # テレメトリ・トレーシング送信を無効化し、各タスクの待ち時間を短縮する
 # （CrewAIインポート前に設定する必要がある）
@@ -184,9 +185,6 @@ def run_crew(
     social_adapter_blog = make_social_adapter(0.6)
     social_adapter_hashtags = make_social_adapter(0.5)
     social_adapter_x_b = make_social_adapter(0.8)
-    # 集約タスク専用：「完了」の一言だけを出力させるため、生成トークン数を絞り高速化する
-    social_adapter_finalize = make_social_adapter(0.1, max_tokens=20)
-    social_adapter_finalize.max_iter = 1
 
     # ── STEP1: Strategist ──────────────────────────────
     task_strategy = Task(
@@ -316,8 +314,6 @@ def run_crew(
 X投稿文の本文のみを出力してください。""",
         expected_output="140文字以内のX投稿文（本文のみ、前置き・説明なし）",
         agent=social_adapter_x,
-        context=[task_seo],
-        async_execution=True,
     )
 
     task_instagram = Task(
@@ -341,8 +337,6 @@ X投稿文の本文のみを出力してください。""",
 Instagram投稿文の本文のみを出力してください。""",
         expected_output="300〜500文字のInstagram投稿文（本文のみ、前置き・説明なし）",
         agent=social_adapter_instagram,
-        context=[task_seo],
-        async_execution=True,
     )
 
     task_blog = Task(
@@ -365,8 +359,6 @@ Instagram投稿文の本文のみを出力してください。""",
 ブログ記事本文のみを出力してください。""",
         expected_output="600〜800文字のブログ記事（本文のみ、前置き・説明なし）",
         agent=social_adapter_blog,
-        context=[task_seo],
-        async_execution=True,
     )
 
     hashtag_common_rules = f"""【業種】{industry}　【テーマ】{theme}　【ターゲット】{target}　【地域】{dialect_region}"""
@@ -391,11 +383,9 @@ Instagram投稿文の本文のみを出力してください。""",
 ※合計12〜15個・#タグ形式で列挙してください。""",
         expected_output="12〜15個の日本語ハッシュタグの一覧のみ（説明・前置きなし）",
         agent=social_adapter_hashtags,
-        context=[task_seo],
-        async_execution=True,
     )
 
-    tasks = [task_strategy, task_writing, task_seo, task_x_a, task_instagram, task_blog, task_hashtags]
+    social_tasks = [task_x_a, task_instagram, task_blog, task_hashtags]
 
     task_x_b = None
     if ab_test:
@@ -420,44 +410,36 @@ Instagram投稿文の本文のみを出力してください。""",
 X投稿文の本文のみを出力してください。""",
             expected_output="140文字以内のX投稿文・パターンB（本文のみ、前置き・説明なし）",
             agent=social_adapter_x_b,
-            context=[task_seo],
-            async_execution=True,
         )
-        tasks.append(task_x_b)
+        social_tasks.append(task_x_b)
 
-    # CrewAIの仕様上、非同期タスクで終わるCrewは末尾に1つしか置けないため、
-    # 並列実行した各タスクの完了を待ち合わせる「集約タスク」を最後に追加する。
-    task_finalize = Task(
-        description="前のタスクで作成されたX投稿文・Instagram投稿文・ブログ記事・ハッシュタグが"
-        "すべて生成されたことを確認し、「完了」とだけ出力してください。",
-        expected_output="「完了」の一言のみ",
-        agent=social_adapter_finalize,
-        context=tasks[3:],
-    )
-    tasks.append(task_finalize)
-
-    agents = [
-        strategist, writer, seo_editor,
-        social_adapter_x, social_adapter_instagram, social_adapter_blog,
-        social_adapter_hashtags, social_adapter_finalize,
-    ]
-    if ab_test:
-        agents.append(social_adapter_x_b)
-
+    # ── STEP1〜3はCrewで順次実行 ─────────────────────────
     crew = Crew(
-        agents=agents,
-        tasks=tasks,
+        agents=[strategist, writer, seo_editor],
+        tasks=[task_strategy, task_writing, task_seo],
         process=Process.sequential,
         verbose=False,
     )
-
     crew.kickoff()
 
+    # ── STEP4は専用エージェントごとにスレッドで並列実行 ─────
+    # CrewAIのasync_executionは「末尾に1つしか置けない」「集約タスクが必要」
+    # といった制約があり、待ち合わせ用の余計なLLM呼び出しが発生するため、
+    # SEO最適化済み本文をcontextとして各エージェントに直接渡し並列処理する。
+    seo_context = task_seo.output.raw if task_seo.output else ""
+
+    with ThreadPoolExecutor(max_workers=len(social_tasks)) as executor:
+        futures = {
+            id(task): executor.submit(task.agent.execute_task, task, seo_context)
+            for task in social_tasks
+        }
+        outputs = {key: future.result() for key, future in futures.items()}
+
     result = {
-        "x_post": clean_output(task_x_a.output.raw if task_x_a.output else ""),
-        "instagram": clean_output(task_instagram.output.raw if task_instagram.output else ""),
-        "blog": clean_output(task_blog.output.raw if task_blog.output else ""),
-        "hashtags": clean_output(task_hashtags.output.raw if task_hashtags.output else ""),
-        "x_post_b": clean_output(task_x_b.output.raw if (task_x_b and task_x_b.output) else ""),
+        "x_post": clean_output(outputs[id(task_x_a)]),
+        "instagram": clean_output(outputs[id(task_instagram)]),
+        "blog": clean_output(outputs[id(task_blog)]),
+        "hashtags": clean_output(outputs[id(task_hashtags)]),
+        "x_post_b": clean_output(outputs[id(task_x_b)]) if task_x_b else "",
     }
     return result
