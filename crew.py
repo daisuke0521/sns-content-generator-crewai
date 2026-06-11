@@ -8,6 +8,11 @@ STEP4 Social Adapter（複数エージェントを非同期実行） : X / Insta
 
 import os
 
+# テレメトリ・トレーシング送信を無効化し、各タスクの待ち時間を短縮する
+# （CrewAIインポート前に設定する必要がある）
+os.environ.setdefault("CREWAI_DISABLE_TELEMETRY", "true")
+os.environ.setdefault("OTEL_SDK_DISABLED", "true")
+
 from crewai import Agent, Crew, LLM, Process, Task
 from dotenv import load_dotenv
 
@@ -57,7 +62,7 @@ def clean_output(text: str) -> str:
     return text.strip()
 
 
-def get_llm(model: str, temperature: float) -> LLM:
+def get_llm(model: str, temperature: float, max_tokens: int | None = None) -> LLM:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key or "your_" in api_key:
         raise ValueError(
@@ -65,7 +70,10 @@ def get_llm(model: str, temperature: float) -> LLM:
             ".env ファイルに GEMINI_API_KEY=your_key を追加してください。\n"
             "APIキー取得：https://aistudio.google.com"
         )
-    return LLM(model=model, api_key=api_key, temperature=temperature)
+    kwargs = {"model": model, "api_key": api_key, "temperature": temperature}
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    return LLM(**kwargs)
 
 
 def run_crew(
@@ -129,6 +137,7 @@ def run_crew(
         ),
         llm=get_llm(model, 0.5),
         verbose=False,
+        max_iter=3,
     )
 
     writer = Agent(
@@ -140,6 +149,7 @@ def run_crew(
         ),
         llm=get_llm(model, 0.7),
         verbose=False,
+        max_iter=3,
     )
 
     seo_editor = Agent(
@@ -151,9 +161,10 @@ def run_crew(
         ),
         llm=get_llm(model, 0.5),
         verbose=False,
+        max_iter=3,
     )
 
-    def make_social_adapter(temperature: float = 0.7) -> Agent:
+    def make_social_adapter(temperature: float = 0.7, max_tokens: int | None = None) -> Agent:
         # 並列実行（async_execution）するタスクは、それぞれ専用のAgentインスタンスを
         # 用意する必要がある（同一インスタンスの並行invokeはCrewAIで許可されていない）。
         return Agent(
@@ -163,8 +174,9 @@ def run_crew(
                 "あなたはX・Instagram・ブログ運用代行を専門とするSNSマーケターです。"
                 "プラットフォームごとの文化やユーザー行動を熟知しています。"
             ),
-            llm=get_llm(model, temperature),
+            llm=get_llm(model, temperature, max_tokens=max_tokens),
             verbose=False,
+            max_iter=3,
         )
 
     social_adapter_x = make_social_adapter(0.7)
@@ -172,7 +184,9 @@ def run_crew(
     social_adapter_blog = make_social_adapter(0.6)
     social_adapter_hashtags = make_social_adapter(0.5)
     social_adapter_x_b = make_social_adapter(0.8)
-    social_adapter_finalize = make_social_adapter(0.3)
+    # 集約タスク専用：「完了」の一言だけを出力させるため、生成トークン数を絞り高速化する
+    social_adapter_finalize = make_social_adapter(0.1, max_tokens=20)
+    social_adapter_finalize.max_iter = 1
 
     # ── STEP1: Strategist ──────────────────────────────
     task_strategy = Task(
